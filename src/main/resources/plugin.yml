@@ -1,0 +1,13 @@
+name: Cheque
+version: '${project.version}'
+main: me.g2213swo.cheque.Cheque
+api-version: '1.20'
+commands:
+  cheque:
+    description: Gives a cheque to a player
+    usage: /<command>
+    permission: cheque.use
+depend:
+  - Vault
+  - GemsEconomy
+  - helper

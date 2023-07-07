@@ -1,0 +1,7 @@
+cheque:
+  enabled: true
+  material: APPLE
+  name: '&a支票'
+  lore:
+    - '&7价值: {value}.'
+    - '&7发行人 {account}'
