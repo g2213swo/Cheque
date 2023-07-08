@@ -6,15 +6,17 @@ import me.g2213swo.cheque.storage.ChequeStorageType;
 import me.g2213swo.cheque.utils.UtilString;
 import me.xanium.gemseconomy.api.Account;
 import me.xanium.gemseconomy.api.Currency;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.apache.commons.lang3.StringUtils;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 
@@ -30,8 +32,8 @@ public class ChequeManager {
         chequeBaseItem = item;
     }
 
-    public @Nullable ItemStack write(String creatorName, Currency currency, double amount) {
-        if (!currency.isPayable()) return null;
+    public Optional<ItemStack> write(String creatorName, Currency currency, double amount) {
+        if (!currency.isPayable()) return Optional.empty();
 
         List<String> format = new ArrayList<>();
         for (String baseLore : requireNonNull(chequeBaseItem.getItemMeta().getLore())) {
@@ -40,51 +42,52 @@ public class ChequeManager {
                     .replace("{account}", creatorName)
             );
         }
-        ItemStack ret = chequeBaseItem.clone();
-        ItemMeta meta = ret.getItemMeta();
+        ItemStack itemStack = chequeBaseItem.clone();
+        ItemMeta meta = itemStack.getItemMeta();
         meta.setLore(format);
-        ChequeStorage storage = new ChequeStorage(creatorName, currency.getSymbolOrEmpty(), amount);
+        ChequeStorage storage = new ChequeStorage(creatorName, currency.getName(), amount);
         meta.getPersistentDataContainer().set(ChequeStorage.key, ChequeStorageType.INSTANCE, storage);
-        ret.setItemMeta(meta);
-        return ret;
+        itemStack.setItemMeta(meta);
+        return Optional.of(itemStack);
     }
 
-    public boolean isValid(ItemStack itemstack) {
-        ChequeStorage storage = ChequeStorage.read(itemstack);
-        return storage != null && StringUtils.isNotBlank(storage.getCurrency()) && StringUtils.isNotBlank(storage.getIssuer());
+    public boolean isValid(ItemStack itemStack) {
+        return getChequeStorage(itemStack)
+                .map(storage -> StringUtils.isNotBlank(storage.getCurrency()) && StringUtils.isNotBlank(storage.getIssuer()))
+                .orElse(false);
     }
 
-    public double getValue(ItemStack itemstack) {
-        ChequeStorage storage = ChequeStorage.read(itemstack);
-        return storage != null ? storage.getValue() : 0;
+    public double getValue(ItemStack itemStack) {
+        return getChequeStorage(itemStack)
+                .map(ChequeStorage::getValue)
+                .orElse(0.0);
     }
 
-    /**
-     * @param itemStack - The cheque item
-     *
-     * @return Currency it represents
-     */
-    public @Nullable Currency getCurrency(ItemStack itemStack) {
-        ChequeStorage storage = ChequeStorage.read(itemStack);
-        return storage != null
-                ? Cheque.gemsEconomyAPI.getCurrency(storage.getCurrency()) // Might be null if the currency is deleted from database
-                : Cheque.gemsEconomyAPI.getDefaultCurrency(); // Should not be null as it was checked during plugin startup
+    public Optional<Currency> getCurrency(ItemStack itemStack) {
+        return getChequeStorage(itemStack)
+                .map(storage -> Cheque.gemsEconomyAPI.getCurrency(storage.getCurrency()))
+                .or(() -> Optional.ofNullable(Cheque.gemsEconomyAPI.getDefaultCurrency()));
     }
 
     public void redeemCheque(Player player, Account user, ItemStack item, ChequeStorage storage) {
-        if (storage == null) return;
-        if (storage.getValue() <= 0) return;
-        if (storage.getCurrency() == null) return;
-        if (storage.getIssuer() == null) return;
+        if (storage == null || storage.getValue() <= 0 || storage.getCurrency() == null || storage.getIssuer() == null) {
+            return;
+        }
 
         Currency currency = Cheque.gemsEconomyAPI.getCurrency(storage.getCurrency());
-        if (currency == null) return;
+        if (currency == null) {
+            return;
+        }
 
         user.deposit(currency, storage.getValue());
-        player.sendMessage(UtilString.colorize(Cheque.instance.getConfig().getString("redeem-message")
-                .replace("{value}", currency.format(storage.getValue()))
-                .replace("{account}", storage.getIssuer())
-        ));
+        Component message = Component.text(currency.simpleFormat(storage.getValue()), NamedTextColor.GOLD)
+                .append(Component.text(" has been deposited to your account ", NamedTextColor.WHITE))
+                .append(Component.text(storage.getIssuer(), NamedTextColor.GREEN));
+        player.sendMessage(Cheque.PREFIX.append(message));
         item.setAmount(item.getAmount() - 1);
+    }
+
+    public Optional<ChequeStorage> getChequeStorage(ItemStack itemStack) {
+        return Optional.ofNullable(ChequeStorage.read(itemStack));
     }
 }

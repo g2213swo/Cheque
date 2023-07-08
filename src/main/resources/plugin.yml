@@ -11,3 +11,4 @@ depend:
   - Vault
   - GemsEconomy
   - helper
+load: POSTWORLD
